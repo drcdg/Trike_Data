@@ -22,8 +22,6 @@ class LabeledNumberDisplay():
 
 class Calibrate:
     def __init__(self,x1,x2,y1,y2):
-        self.input_limits = (x1,x2)
-        self.output_limits = (y1,y2)
         #y=mx+b 
         self.slope = (y2 - y1)/(x2 - x1)
         # b= y - mx
@@ -56,21 +54,26 @@ class Alarm:
     def check(self,value):
         if value > self.high_high:
             #self.gui.update("high_high")
-            print("warning value very high")
+            #print("warning value very high")
+            pass
         elif value > self.high:
             #self.gui.update("high")
-            print("warning value high")
+            #print("warning value high")
+            pass
         elif value < self.low_low:
             #self.gui.update("low_low")
-            print("warning value very low")
+            #print("warning value very low")
+            pass
         elif value < self.low:
             #self.gui.update("low")
-            print("warning value low")
+            #print("warning value low")
+            pass
         return value
     
 
 class Tag:
-    def __init__(self, IO : Callable, vis, alpha_value = None, calibration_values = None, alarm_limits = None ):
+    def __init__(self,raw_Data_Dict, IO : Callable, vis, alpha_value = None, calibration_values = None, alarm_limits = None ):
+        self.Data =raw_Data_Dict
         self.IO = IO
         self.vis = vis
         self.processFunctions = []
@@ -88,24 +91,20 @@ class Tag:
             self.alarm = Alarm(*alarm_limits, vis)
         
         self.step = .5
+        self.value = 0
         self.thread = Thread(target=self.worker, daemon = True)   
         self.thread.start()
 
     def worker(self):
         while True:
-            self.value = self.IO()
+            self.value = self.Data[self.IO]
             for p in self.processFunctions: 
                self.value = p(self.value)
-            print(self.value)
             self.vis.value(self.value)
             time.sleep(self.step)
             if self.alarm: self.alarm.check(self.value)  
             
     def __repr__(self):
-        self.value = self.IO()
-        for p in self.processFunctions: 
-           self.value = p(self.value)
-        self.update()  
         return repr(self.value)
     
     def update(self):
@@ -113,8 +112,8 @@ class Tag:
         #self.vis.update(value = self)
 
 if __name__ == "__main__":
-    b = 3.5
+    data = {'b':3.5}
 
-    a = Tag(lambda :b, None, alpha_value = .05, calibration_values = (0,5,100,200), alarm_limits = (190,150,120,110))
+    a = Tag(data,'b', None, alpha_value = .05, calibration_values = (0,5,100,200), alarm_limits = (190,150,120,110))
     while True:
         pass

@@ -277,8 +277,8 @@ class Accelerometer():
         output['GYRZ Angle'] = self.gyroZangle
         output['CFangleX Angle'] = self.CFangleX
         output['CFangleY Angle'] = self.CFangleY
-        output['kalmanX'] = kalmanX   
-        output['kalmanY'] = kalmanY
+        #output['kalmanX'] = kalmanX   
+        #output['kalmanY'] = kalmanY
         output['Loop Time'] = LP 
         return output
     
