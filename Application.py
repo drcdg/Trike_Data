@@ -1,5 +1,6 @@
+#Application.py 
 import PySimpleGUI as sg
-from threading import Thread
+
 import time
 from datetime import datetime
 import sqlite3
@@ -7,9 +8,11 @@ import sqlite3
 from AnalogInputs import Analog_Inputs, RTD_Inputs
 import DirectionSensors
 
-from Tags import Tag
+from Machine import Machine
 
-file = 'rider_data.db';
+from TagScope import line_graph, Bar_Graph
+
+file = 'rider_data.db'
 #add timestamp
 
 def create_table(data):
@@ -56,11 +59,16 @@ class LabeledNumberDisplay():
         val = float(val)        
         window[self.value_key].update(f'{val:.3f}')
         
-analog_device_names = ['Motor voltage','Motor current','Battery voltage','Battery current','Cap Voltage']
-RTD_names = ['Motor temperature','Batterry Temperature','Rider temperature','Ambient temperature']
-accel_names = ['Accelerarion X', 'Accelerarion Y', 'Gyro X', 'Gyro Y', 'Gyro Z', 'Roll (bike angle)','Pitch of bike','Loop Time']
-compass_names = ['Compass']
-
+    def alarm(self, level):
+        if level == 1:
+            window[self.value_key].update(background_color = "yellow")
+            return    
+        
+        elif level == 2:  
+            window[self.value_key].update(background_color = "red")
+            return
+        
+        window[self.value_key].update(background_color = "blue")
 
 #define devices / data source
 analogCard1 = Analog_Inputs()
@@ -74,116 +82,79 @@ names += list(rtdCard1.Poll().keys())
 names += list(AccGyro.Poll().keys())
 names +=  list(Compass.Poll().keys())
 
+analog_device_names = ['Motor voltage','Motor current','Battery voltage','Battery current','Cap Voltage']
+RTD_names = ['Motor temperature','Batterry Temperature','Rider temperature','Ambient temperature']
+accel_names = ['Accelerarion X', 'Accelerarion Y', 'Gyro X', 'Gyro Y', 'Gyro Z', 'Roll (bike angle)','Pitch of bike','Loop Time']
+compass_names = ['Compass']
+
 device_labels = analog_device_names + RTD_names + accel_names + compass_names
 
 #create a dictionary with numbered display for each name
 displays = {name : LabeledNumberDisplay(key = name, label = device_label ) for name,device_label in zip(names,device_labels)}
 
+machine = Machine(displays)
+
 #place each number display into a column
 sensor_column = sg.Column([d.layout for d in list(displays.values())])
 
+power_plot = line_graph("Power",{"Motor Power": lambda :machine.Motor_Voltage.result*machine.Motor_Current.result},
+                        canvass_size = (325,150), domain_range = (120, 1000))
+
+temperature_plot = line_graph("Temperatures", {'Motor_Temperature'    :lambda: machine.Motor_Temperature.result    ,
+                                                'Batterry_Temperature':lambda: machine.Batterry_Temperature.result ,
+                                                'Rider_Temperature'   :lambda: machine.Rider_Temperature.result    ,
+                                                'Ambient_Temperature' :lambda: machine.Ambient_Temperature.result  },
+                              canvass_size = (500,150), domain_range = (120, 200))
+
+energy_bars = Bar_Graph("Energy Bars",  graph_size=(150,150)) 
+
 #main layout
-layout = [[sensor_column,sg.VSeparator(),sg.Frame(title = "Graph", layout = [[sg.Graph(key = "plot", canvas_size = (200,400), graph_bottom_left = (0,0), graph_top_right= (200,400)),],
+layout = [[sensor_column,sg.VSeparator(),sg.Column(layout = [[power_plot.layout, energy_bars.layout],
+                                                                             [temperature_plot.layout],
                                                                              [sg.Button("Start Recording", key = "-PlotSTARTSTOP-")]]
                                                   
-                                                  ),sg.VSeparator(),sg.Frame(title = "GPS", layout = [[]])]]
+                                                  )]]#,sg.VSeparator(),sg.Frame(title = "GPS", layout = [[]])
 
 #create window
-window = sg.Window(title="Sensor Display", layout=layout)
+window = sg.Window(title="Sensor Display", layout=layout, finalize = True)
 
-#machine Definitions
-class Poll_Sensors():  #call this once to start a thread
-    def __init__(self, step) -> None:
-        self.value = 0
-        self.step = step
-        self.Compass = DirectionSensors.Compass()        #self.Compass = Tag(DirectionSensors.Compass.Poll, displays['heading'] , alpha_value = .05, calibration_values = None, alarm_limits = None)
-        self.AccGyro = DirectionSensors.Accelerometer()
-        self.analogCard1 = Analog_Inputs()
-        self.rtdCard1 = RTD_Inputs()
-        self.thread = Thread(target=self.worker, daemon=True)   
-        self.thread.start()
-        self.RawValues = {}
 
-    def worker(self):
-        while True:
-            for sensor in [self.analogCard1, self.rtdCard1, self.AccGyro, self.Compass]:
-                for k,v in sensor.Poll().items():
-                    #Update the display
-                    self.RawValues[k] = v
-            time.sleep(self.step)
-   
-            
-class Machine():
-    def __init__(self, vis) -> None:
-        #tie tasks to displays once
-
-        self.running = False
-        self.vis = vis 
-        self.sensors = Poll_Sensors(.5)
-        time.sleep(5)
-                       #	input dict location, vis locaion, filter weight or None, scaling (in1,in2,out1,out2)or None, alarm(high_high,high, low,low_low) or None 
-        #analog Card
-        self.Motor_Voltage = Tag(self.sensors.RawValues,'AnalogIn_0', self.vis['AnalogIn_0'], alpha_value = .05, calibration_values = (0,5,0,36), alarm_limits = (35,33,10,5) )
-        self.Motor_Current = Tag(self.sensors.RawValues,'AnalogIn_1', self.vis['AnalogIn_1'], alpha_value = .05, calibration_values = (0,5,-10,10), alarm_limits = (9.9,8,-8,-9.9) ) 
-        self.Battery_Voltage =Tag(self.sensors.RawValues,'AnalogIn_2', self.vis['AnalogIn_2'], alpha_value = .05, calibration_values = (0,5,0,36), alarm_limits = (35,33,10,5) )
-        self.Battery_Current =Tag(self.sensors.RawValues,'AnalogIn_3', self.vis['AnalogIn_3'], alpha_value = .30, calibration_values = (0,5,-10, 10), alarm_limits = (9.9,8,-8,-9.9)) 
-        self.Cap_Voltage     =Tag(self.sensors.RawValues,'AnalogIn_4', self.vis['AnalogIn_4'], alpha_value = .05, calibration_values = (0,5,0,100), alarm_limits = (95,90,10,5))    
-       
-        #Rtd 
-        self.Motor_Temperature    = Tag(self.sensors.RawValues,'RTD_1', self.vis['RTD_1'], alpha_value = .05, calibration_values = (0,5,0,36), alarm_limits = (35,33,10,5) )
-        self.Batterry_Temperature = Tag(self.sensors.RawValues,'RTD_2', self.vis['RTD_2'], alpha_value = .05, calibration_values = (0,5,0,36), alarm_limits = (35,33,10,5) )
-        self.Rider_Temperature    = Tag(self.sensors.RawValues,'RTD_3', self.vis['RTD_3'], alpha_value = .05, calibration_values = (0,5,0,36), alarm_limits = (35,33,10,5) )
-        self.Ambient_Temperature  = Tag(self.sensors.RawValues,'RTD_4', self.vis['RTD_4'], alpha_value = .05, calibration_values = (0,5,0,36), alarm_limits = (35,33,10,5) )
-        
-        #Acceleration
-        self.Accelerarion_X = Tag(self.sensors.RawValues,'ACCX Angle', self.vis['ACCX Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Accelerarion_Y = Tag(self.sensors.RawValues,'ACCY Angle', self.vis['ACCY Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Gyro_X         = Tag(self.sensors.RawValues,'GRYX Angle', self.vis['GRYX Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Gyro_Y         = Tag(self.sensors.RawValues,'GYRY Angle', self.vis['GYRY Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Gyro_Z         = Tag(self.sensors.RawValues,'GYRZ Angle', self.vis['GYRZ Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Roll           = Tag(self.sensors.RawValues,'CFangleX Angle', self.vis['CFangleX Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Pitch          = Tag(self.sensors.RawValues,'CFangleY Angle', self.vis['CFangleY Angle'], alpha_value = .05, calibration_values = (0,5,0,36))
-        self.Loop_Time      = Tag(self.sensors.RawValues,'Loop Time', self.vis['Loop Time'])
-        #Compass
-        self.Heading        = Tag(self.sensors.RawValues,'heading', self.vis['heading'], alpha_value = .05, calibration_values = (0,5,0,36))
-        
-        
-    def run(self):
-        if self.running:#polling opperations happening here
-            
-
-            return
-        self.running = True
+power_plot.start_plotting(window)
+temperature_plot.start_plotting(window)
+energy_bars.start_plotting(window)
 
 #Application
 #create instance of Machine that polls sensors, pass refference to visual componenet
 window.read(timeout = 500)
-machine = Machine(displays)
+
 time.sleep(6)
-data_dict = {'Motor_Voltage':machine.Motor_Voltage.value   ,
-        'Motor_Current'     :machine.Motor_Current.value   , 
-        'Battery_Voltage'   :machine.Battery_Voltage.value ,
-        'Battery_Current'   :machine.Battery_Current.value , 
-        'Cap_Voltage'       :machine.Cap_Voltage.value     ,   
+
+
+data_dict = {'Motor_Voltage':machine.Motor_Voltage.result   ,
+        'Motor_Current'     :machine.Motor_Current.result   , 
+        'Battery_Voltage'   :machine.Battery_Voltage.result ,
+        'Battery_Current'   :machine.Battery_Current.result , 
+        'Cap_Voltage'       :machine.Cap_Voltage.result     ,   
         
-        'Motor_Temperature'   :machine.Motor_Temperature.value    ,
-        'Batterry_Temperature':machine.Batterry_Temperature.value ,
-        'Rider_Temperature'   :machine.Rider_Temperature.value    ,
-        'Ambient_Temperature' :machine.Ambient_Temperature.value  ,
+        'Motor_Temperature'   :machine.Motor_Temperature.result    ,
+        'Batterry_Temperature':machine.Batterry_Temperature.result ,
+        'Rider_Temperature'   :machine.Rider_Temperature.result    ,
+        'Ambient_Temperature' :machine.Ambient_Temperature.result  ,
         
-        'Accelerarion_X':machine.Accelerarion_X.value ,
-        'Accelerarion_Y':machine.Accelerarion_Y.value ,
-        'Gyro_X'   :machine.Gyro_X.value        ,
-        'Gyro_Y'   :machine.Gyro_Y.value        ,
-        'Gyro_Z'   :machine.Gyro_Z.value        ,
-        'Roll'     :machine.Roll.value          ,
-        'Pitch'    :machine.Pitch.value         ,
-        'Loop_Time':machine.Loop_Time.value     ,
-        'Heading'  :machine.Heading.value
+        'Accelerarion_X':machine.Accelerarion_X.result ,
+        'Accelerarion_Y':machine.Accelerarion_Y.result ,
+        'Gyro_X'   :machine.Gyro_X.result        ,
+        'Gyro_Y'   :machine.Gyro_Y.result        ,
+        'Gyro_Z'   :machine.Gyro_Z.result        ,
+        'Roll'     :machine.Roll.result          ,
+        'Pitch'    :machine.Pitch.result         ,
+        'Loop_Time':machine.Loop_Time.result     ,
+        'Heading'  :machine.Heading.result
              }
 
-#create_table(data_dict)
+create_table(data_dict)
 recording = False
+
 while True:    
     event, values = window.read(timeout = 500)
     #this is the periodic call to the machine code which only reports sensor data atm
@@ -204,6 +175,10 @@ while True:
 
     if recording:
         simple_DB_add(data_dict)
+
+    power_plot.update()
+    temperature_plot.update()
+    energy_bars.update(labels = ['Pedal','Battery','Motor'], consumption = [0,3,22], generation = [13,5,2])
         
         
 window.close()

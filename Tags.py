@@ -51,24 +51,13 @@ class Alarm:
         self.low = low
         self.low_low = low_low
     
+    #return severity of alarm
     def check(self,value):
-        if value > self.high_high:
-            #self.gui.update("high_high")
-            #print("warning value very high")
-            pass
-        elif value > self.high:
-            #self.gui.update("high")
-            #print("warning value high")
-            pass
-        elif value < self.low_low:
-            #self.gui.update("low_low")
-            #print("warning value very low")
-            pass
-        elif value < self.low:
-            #self.gui.update("low")
-            #print("warning value low")
-            pass
-        return value
+        if self.low_low > value or value > self.high_high:
+            return 2
+        if self.low > value or value > self.high:
+            return 1
+        return 0
     
 
 class Tag:
@@ -92,23 +81,29 @@ class Tag:
         
         self.step = .5
         self.value = 0
-        self.thread = Thread(target=self.worker, daemon = True)   
+        self.result = 0
+        self.thread = Thread(target=self.worker, daemon = False)   
         self.thread.start()
 
     def worker(self):
         while True:
+            #get raw
             self.value = self.Data[self.IO]
+            #run calculations on raw
             for p in self.processFunctions: 
                self.value = p(self.value)
-            self.vis.value(self.value)
+            #update value provided
+            self.result = self.value
+            
             time.sleep(self.step)
-            if self.alarm: self.alarm.check(self.value)  
+            
             
     def __repr__(self):
-        return repr(self.value)
+        return repr(self.result)
     
     def update(self):
-        if self.alarm: self.alarm.check(self.value)  
+        self.vis.value(self.result)
+        if self.alarm: self.vis.alarm(self.alarm.check(self.result))  
         #self.vis.update(value = self)
 
 if __name__ == "__main__":
